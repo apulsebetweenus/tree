@@ -415,37 +415,61 @@ update(!reduced.matches);
 btn.addEventListener('click',()=>update(!model.autoRotate));
 reduced.addEventListener?.('change',e=>{if(e.matches)update(false)});
 })();</script><script id="social-placeholder-handler">document.querySelectorAll('.social-placeholder[href="#"]').forEach(link=>link.addEventListener('click',event=>event.preventDefault()));</script><script id="heartbeat-clock-sync">(()=>{const stage=document.getElementById('story-stage');if(!stage)return;const restart=()=>{for(const el of document.querySelectorAll('.story-overlay,.beat-line')){el.style.animation='none';}void stage.offsetWidth;for(const el of document.querySelectorAll('.story-overlay,.beat-line'))el.style.removeProperty('animation');};for(const id of ['visitor1','visitor2','reset'])document.getElementById(id)?.addEventListener('click',()=>requestAnimationFrame(restart));})();</script><script id="ecg-visible-repair-script">(()=>{const paths=[...document.querySelectorAll('.ecg-drawing')];for(const path of paths){try{path.style.setProperty('--ecg-length',String(Math.ceil(path.getTotalLength()+2)))}catch(e){path.style.setProperty('--ecg-length','750')}}const buttons=['visitor1','visitor2','reset'].map(id=>document.getElementById(id)).filter(Boolean);for(const button of buttons)button.addEventListener('click',()=>{requestAnimationFrame(()=>{for(const path of paths){path.style.animation='none';void path.getBoundingClientRect();path.style.removeProperty('animation')}})})})();</script><script id="unified-heartbeat-restart">(()=>{const ids=['visitor1','visitor2','reset'];const restart=()=>{const els=[...document.querySelectorAll('.story-overlay,.ecg-drawing')];els.forEach(el=>el.style.animation='none');void document.getElementById('story-stage')?.offsetWidth;els.forEach(el=>el.style.removeProperty('animation'))};ids.forEach(id=>document.getElementById(id)?.addEventListener('click',()=>requestAnimationFrame(()=>requestAnimationFrame(restart))))})();</script><script id="touch-cursor-reliable-controller">(()=>{
-  const touchDevice=matchMedia('(pointer:coarse)').matches||navigator.maxTouchPoints>0||('ontouchstart' in window);
-  if(!touchDevice)return;
+  const coarse=matchMedia('(pointer:coarse)').matches||navigator.maxTouchPoints>0||('ontouchstart' in window);
+  if(!coarse)return;
   const cursor=document.createElement('span');
-  cursor.className='touch-story-cursor';cursor.setAttribute('aria-hidden','true');document.body.appendChild(cursor);
-  let touching=false,seen=false,lastX=innerWidth/2,lastY=innerHeight*.55;
-  let documentX=lastX+scrollX,documentY=lastY+scrollY,hideTimer=null,scrollTimer=null;
-  const keepVisible=()=>{clearTimeout(hideTimer);cursor.classList.add('is-visible')};
-  function render(x,y){cursor.style.setProperty('--touch-x',x+'px');cursor.style.setProperty('--touch-y',y+'px');document.body.style.setProperty('--heart-x',x+'px');document.body.style.setProperty('--heart-y',y+'px')}
-  function track(x,y){touching=true;seen=true;lastX=x;lastY=y;documentX=x+scrollX;documentY=y+scrollY;render(x,y);keepVisible()}
-  function scheduleFade(){clearTimeout(hideTimer);hideTimer=setTimeout(()=>{if(!touching)cursor.classList.remove('is-visible')},1050)}
-  document.addEventListener('touchstart',e=>{if(e.touches.length)track(e.touches[0].clientX,e.touches[0].clientY)},{passive:true,capture:true});
-  document.addEventListener('touchmove',e=>{if(e.touches.length)track(e.touches[0].clientX,e.touches[0].clientY)},{passive:true,capture:true});
-  document.addEventListener('touchend',e=>{if(e.touches.length){track(e.touches[0].clientX,e.touches[0].clientY);return}touching=false;scheduleFade()},{passive:true,capture:true});
-  document.addEventListener('touchcancel',()=>{touching=false;scheduleFade()},{passive:true,capture:true});
-  // Native scrolling can suppress touchmove/pointermove entirely, especially on iOS.
-  // Scroll itself is therefore an independent trigger: reveal and refresh the cursor
-  // during EVERY scroll event, including momentum and uninterrupted swipes.
-  window.addEventListener('scroll',()=>{
-    if(!seen){seen=true;documentX=lastX+scrollX;documentY=lastY+scrollY}
-    if(touching){render(lastX,lastY)}
-    else{render(documentX-scrollX,documentY-scrollY)}
-    keepVisible();
-    clearTimeout(scrollTimer);
-    scrollTimer=setTimeout(()=>{if(!touching)scheduleFade()},120);
-  },{passive:true});
-  // Pointer events are a fallback only where Touch Events are unavailable.
+  cursor.className='touch-story-cursor';cursor.setAttribute('aria-hidden','true');
+  document.body.appendChild(cursor);
+  let fingerDown=false, seenTouch=false, x=innerWidth*.5,y=innerHeight*.55;
+  let lastTouchAt=0, lastScrollAt=0, hideTimer=0, raf=0;
+  const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+  const position=(nx,ny)=>{
+    x=clamp(nx,24,Math.max(24,innerWidth-24));
+    y=clamp(ny,24,Math.max(24,innerHeight-24));
+    cursor.style.setProperty('--touch-x',x+'px');
+    cursor.style.setProperty('--touch-y',y+'px');
+    document.body.style.setProperty('--heart-x',x+'px');
+    document.body.style.setProperty('--heart-y',y+'px');
+  };
+  const show=()=>{clearTimeout(hideTimer);cursor.classList.add('is-visible')};
+  const fadeLater=(delay=1000)=>{
+    clearTimeout(hideTimer);
+    hideTimer=setTimeout(()=>{
+      if(!fingerDown && performance.now()-lastScrollAt>180)cursor.classList.remove('is-visible');
+      else if(!fingerDown)fadeLater(250);
+    },delay);
+  };
+  const fromTouch=e=>{
+    const t=e.touches[0]||e.changedTouches[0];
+    if(!t)return;
+    seenTouch=true;lastTouchAt=performance.now();
+    position(t.clientX,t.clientY);show();
+  };
+  document.addEventListener('touchstart',e=>{fingerDown=true;fromTouch(e)},{capture:true,passive:true});
+  document.addEventListener('touchmove',e=>{fingerDown=true;fromTouch(e)},{capture:true,passive:true});
+  document.addEventListener('touchend',e=>{
+    fingerDown=e.touches.length>0;
+    if(fingerDown)fromTouch(e);
+    else {lastTouchAt=performance.now();fadeLater(1000)}
+  },{capture:true,passive:true});
+  document.addEventListener('touchcancel',()=>{fingerDown=false;fadeLater(1000)},{capture:true,passive:true});
+  // Keep the icon within the viewport for the entire scrolling gesture.
+  // Do not subtract scrollY: that used to push the cursor above the screen,
+  // preventing later scroll events from showing it again.
+  const onScroll=()=>{
+    lastScrollAt=performance.now();
+    if(!seenTouch){position(innerWidth*.5,innerHeight*.55);seenTouch=true}
+    // Position is viewport-relative and stays visible even through momentum scrolling.
+    if(!raf)raf=requestAnimationFrame(()=>{raf=0;position(x,y);show();fadeLater(1000)});
+  };
+  window.addEventListener('scroll',onScroll,{passive:true});
+  document.addEventListener('scroll',onScroll,{passive:true,capture:true});
+  // Pointer fallback for devices that don't dispatch Touch Events.
   if(!('ontouchstart' in window)){
-    document.addEventListener('pointerdown',e=>{if(e.pointerType==='touch')track(e.clientX,e.clientY)},{passive:true});
-    document.addEventListener('pointermove',e=>{if(e.pointerType==='touch'&&touching)track(e.clientX,e.clientY)},{passive:true});
-    document.addEventListener('pointerup',e=>{if(e.pointerType==='touch'){touching=false;scheduleFade()}},{passive:true});
-    document.addEventListener('pointercancel',e=>{if(e.pointerType==='touch'){touching=false;scheduleFade()}},{passive:true});
+    document.addEventListener('pointerdown',e=>{if(e.pointerType==='touch'){fingerDown=true;seenTouch=true;position(e.clientX,e.clientY);show()}},{passive:true});
+    document.addEventListener('pointermove',e=>{if(e.pointerType==='touch'&&fingerDown){position(e.clientX,e.clientY);show()}},{passive:true});
+    document.addEventListener('pointerup',e=>{if(e.pointerType==='touch'){fingerDown=false;fadeLater(1000)}},{passive:true});
+    document.addEventListener('pointercancel',e=>{if(e.pointerType==='touch'){fingerDown=false;fadeLater(1000)}},{passive:true});
   }
-  render(lastX,lastY);
+  position(x,y);
 })();</script></body></html>
